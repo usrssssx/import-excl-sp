@@ -76,8 +76,12 @@ class ResolveBitrixContext
         $domain = preg_replace('#^https?://#', '', trim($domain));
         $domain = trim((string) $domain, '/');
 
-        if ($domain === '' || $memberId === '' || $accessToken === '' || $userId <= 0) {
+        if ($domain === '' || $accessToken === '') {
             return null;
+        }
+
+        if ($memberId === '') {
+            $memberId = 'domain_'.preg_replace('/[^a-z0-9]+/i', '_', $domain);
         }
 
         $expiresAt = null;
