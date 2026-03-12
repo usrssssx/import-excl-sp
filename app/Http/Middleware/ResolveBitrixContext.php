@@ -26,7 +26,13 @@ class ResolveBitrixContext
         $incomingContext = $this->extractIncomingContext($request);
 
         if ($incomingContext !== null) {
-            [$portal, $portalUser] = $this->persistContext($incomingContext);
+            try {
+                [$portal, $portalUser] = $this->persistContext($incomingContext);
+            } catch (\InvalidArgumentException) {
+                $request->session()->forget('bitrix_context');
+
+                return response()->view('bitrix.missing-context', [], 401);
+            }
 
             $request->session()->put('bitrix_context', [
                 'portal_id' => $portal->id,
@@ -43,7 +49,12 @@ class ResolveBitrixContext
         $portal = Portal::query()->find($sessionContext['portal_id'] ?? null);
         $portalUser = PortalUser::query()->find($sessionContext['portal_user_id'] ?? null);
 
-        if (! $portal || ! $portalUser || $portalUser->portal_id !== $portal->id) {
+        if (
+            ! $portal
+            || ! $portalUser
+            || $portalUser->portal_id !== $portal->id
+            || $portalUser->bitrix_user_id <= 0
+        ) {
             $request->session()->forget('bitrix_context');
 
             return response()->view('bitrix.missing-context', [], 401);
@@ -142,6 +153,10 @@ class ResolveBitrixContext
         }
 
         $bitrixUserId = (int) ($currentUser['ID'] ?? $currentUser['id'] ?? $context['user_id']);
+        if ($bitrixUserId <= 0) {
+            throw new \InvalidArgumentException('Bitrix user ID is missing in request context.');
+        }
+
         $name = trim((string) (($currentUser['NAME'] ?? '').' '.($currentUser['LAST_NAME'] ?? '')));
 
         $departmentIds = $currentUser['UF_DEPARTMENT'] ?? [];
