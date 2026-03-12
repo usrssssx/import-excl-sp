@@ -80,19 +80,36 @@
             return;
         }
 
-        const params = new URLSearchParams(window.location.search);
-        params.set('AUTH_ID', auth.access_token);
-        if (auth.refresh_token) params.set('REFRESH_ID', auth.refresh_token);
-        if (auth.expires) params.set('AUTH_EXPIRES', String(auth.expires));
-        if (auth.member_id) params.set('member_id', auth.member_id);
-        if (auth.user_id) params.set('USER_ID', String(auth.user_id));
-        if (typeof BX24.getDomain === 'function' && BX24.getDomain()) {
-            params.set('DOMAIN', BX24.getDomain());
+        const finalizeWithUserId = (userId) => {
+            const params = new URLSearchParams(window.location.search);
+            params.set('AUTH_ID', auth.access_token);
+            if (auth.refresh_token) params.set('REFRESH_ID', auth.refresh_token);
+            if (auth.expires) params.set('AUTH_EXPIRES', String(auth.expires));
+            if (auth.member_id) params.set('member_id', auth.member_id);
+            if (userId && Number(userId) > 0) params.set('USER_ID', String(userId));
+            if (typeof BX24.getDomain === 'function' && BX24.getDomain()) {
+                params.set('DOMAIN', BX24.getDomain());
+            }
+
+            params.set('__ctx', '1');
+            writeStatus('Контекст получен, перезагружаем приложение...');
+            window.location.replace(`${window.location.pathname}?${params.toString()}`);
+        };
+
+        if (auth.user_id && Number(auth.user_id) > 0) {
+            finalizeWithUserId(auth.user_id);
+            return;
         }
 
-        params.set('__ctx', '1');
-        writeStatus('Контекст получен, перезагружаем приложение...');
-        window.location.replace(`${window.location.pathname}?${params.toString()}`);
+        if (typeof BX24.callMethod === 'function') {
+            BX24.callMethod('user.current', {}, (result) => {
+                const userId = Number(result?.data?.()?.ID || result?.data?.()?.id || 0);
+                finalizeWithUserId(userId);
+            });
+            return;
+        }
+
+        finalizeWithUserId(0);
     };
 
     if (window.BX24 && typeof window.BX24.init === 'function') {

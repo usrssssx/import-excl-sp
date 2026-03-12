@@ -26,13 +26,7 @@ class ResolveBitrixContext
         $incomingContext = $this->extractIncomingContext($request);
 
         if ($incomingContext !== null) {
-            try {
-                [$portal, $portalUser] = $this->persistContext($incomingContext);
-            } catch (\InvalidArgumentException) {
-                $request->session()->forget('bitrix_context');
-
-                return response()->view('bitrix.missing-context', [], 401);
-            }
+            [$portal, $portalUser] = $this->persistContext($incomingContext);
 
             $request->session()->put('bitrix_context', [
                 'portal_id' => $portal->id,
@@ -53,7 +47,6 @@ class ResolveBitrixContext
             ! $portal
             || ! $portalUser
             || $portalUser->portal_id !== $portal->id
-            || $portalUser->bitrix_user_id <= 0
         ) {
             $request->session()->forget('bitrix_context');
 
@@ -73,16 +66,71 @@ class ResolveBitrixContext
      */
     private function extractIncomingContext(Request $request): ?array
     {
-        $auth = $request->input('auth', []);
+        $authLower = $request->input('auth', []);
+        $authUpper = $request->input('AUTH', []);
 
-        $domain = (string) ($auth['domain'] ?? $auth['server_domain'] ?? $request->input('DOMAIN') ?? $request->input('domain') ?? '');
-        $memberId = (string) ($auth['member_id'] ?? $request->input('member_id') ?? $request->input('MEMBER_ID') ?? '');
-        $accessToken = (string) ($auth['access_token'] ?? $request->input('AUTH_ID') ?? '');
-        $refreshToken = $auth['refresh_token'] ?? $request->input('REFRESH_ID');
-        $authExpires = $auth['expires'] ?? $request->input('AUTH_EXPIRES');
-        $applicationToken = $auth['application_token'] ?? $request->input('APP_SID') ?? $request->input('APPLICATION_TOKEN');
-        $protocol = $this->normalizeProtocol($auth['protocol'] ?? $request->input('PROTOCOL') ?? 'https');
-        $userId = (int) ($auth['user_id'] ?? $request->input('USER_ID') ?? 0);
+        $auth = [];
+        if (is_array($authUpper)) {
+            $auth = $authUpper;
+        }
+        if (is_array($authLower)) {
+            $auth = array_merge($auth, $authLower);
+        }
+
+        $domain = (string) (
+            $auth['domain']
+            ?? $auth['DOMAIN']
+            ?? $auth['server_domain']
+            ?? $auth['SERVER_DOMAIN']
+            ?? $request->input('DOMAIN')
+            ?? $request->input('domain')
+            ?? $request->input('AUTH.DOMAIN')
+            ?? ''
+        );
+        $memberId = (string) (
+            $auth['member_id']
+            ?? $auth['MEMBER_ID']
+            ?? $request->input('member_id')
+            ?? $request->input('MEMBER_ID')
+            ?? $request->input('AUTH.MEMBER_ID')
+            ?? ''
+        );
+        $accessToken = (string) (
+            $auth['access_token']
+            ?? $auth['ACCESS_TOKEN']
+            ?? $request->input('AUTH_ID')
+            ?? $request->input('auth_id')
+            ?? $request->input('AUTH.ACCESS_TOKEN')
+            ?? ''
+        );
+        $refreshToken = $auth['refresh_token']
+            ?? $auth['REFRESH_TOKEN']
+            ?? $request->input('REFRESH_ID')
+            ?? $request->input('AUTH.REFRESH_TOKEN');
+        $authExpires = $auth['expires']
+            ?? $auth['EXPIRES']
+            ?? $request->input('AUTH_EXPIRES')
+            ?? $request->input('AUTH.EXPIRES');
+        $applicationToken = $auth['application_token']
+            ?? $auth['APPLICATION_TOKEN']
+            ?? $request->input('APP_SID')
+            ?? $request->input('APPLICATION_TOKEN')
+            ?? $request->input('AUTH.APPLICATION_TOKEN');
+        $protocol = $this->normalizeProtocol(
+            $auth['protocol']
+            ?? $auth['PROTOCOL']
+            ?? $request->input('PROTOCOL')
+            ?? $request->input('AUTH.PROTOCOL')
+            ?? 'https'
+        );
+        $userId = (int) (
+            $auth['user_id']
+            ?? $auth['USER_ID']
+            ?? $request->input('USER_ID')
+            ?? $request->input('user_id')
+            ?? $request->input('AUTH.USER_ID')
+            ?? 0
+        );
 
         $domain = preg_replace('#^https?://#', '', trim($domain));
         $domain = trim((string) $domain, '/');
@@ -154,7 +202,11 @@ class ResolveBitrixContext
 
         $bitrixUserId = (int) ($currentUser['ID'] ?? $currentUser['id'] ?? $context['user_id']);
         if ($bitrixUserId <= 0) {
-            throw new \InvalidArgumentException('Bitrix user ID is missing in request context.');
+            $bitrixUserId = (int) PortalUser::query()
+                ->where('portal_id', $portal->id)
+                ->where('bitrix_user_id', '>', 0)
+                ->orderByDesc('last_seen_at')
+                ->value('bitrix_user_id');
         }
 
         $name = trim((string) (($currentUser['NAME'] ?? '').' '.($currentUser['LAST_NAME'] ?? '')));
