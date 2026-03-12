@@ -3,6 +3,7 @@
 namespace App\Services\Bitrix24;
 
 use App\Models\Portal;
+use RuntimeException;
 
 class Bitrix24Service
 {
@@ -137,6 +138,10 @@ class Bitrix24Service
             'halt' => 0,
             'cmd' => $commands,
         ]);
+
+        if (isset($response['error'])) {
+            throw new RuntimeException((string) ($response['error_description'] ?? $response['error']));
+        }
 
         $resultNode = $response['result'] ?? [];
 

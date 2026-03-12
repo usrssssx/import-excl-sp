@@ -84,7 +84,7 @@ class ImportController extends Controller
 
         $progress = $importJob->total_rows > 0
             ? (int) floor(($importJob->processed_rows / $importJob->total_rows) * 100)
-            : 0;
+            : ($importJob->isFinished() ? 100 : 0);
 
         return response()->json([
             'status' => $importJob->status,
