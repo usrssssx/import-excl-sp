@@ -21,9 +21,8 @@ class ExcelTemplateService
         $columnIndex = 1;
 
         foreach ($fields as $field) {
-            $templateSheet->setCellValueByColumnAndRow(
-                $columnIndex,
-                1,
+            $templateSheet->setCellValue(
+                $this->cellAddress($columnIndex, 1),
                 sprintf('%s (%s)', $field['title'], $field['code']),
             );
 
@@ -71,5 +70,10 @@ class ExcelTemplateService
         (new Xlsx($spreadsheet))->save($filePath);
 
         return $filePath;
+    }
+
+    private function cellAddress(int $column, int $row): string
+    {
+        return Coordinate::stringFromColumnIndex($column).$row;
     }
 }
