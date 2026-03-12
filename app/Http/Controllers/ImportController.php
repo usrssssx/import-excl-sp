@@ -38,7 +38,13 @@ class ImportController extends Controller
         $entityTypeId = (int) $validated['entity_type_id'];
         abort_unless($this->permissions->canUpload($user, $entityTypeId), 403, 'Нет доступа к выбранному смарт-процессу.');
 
-        $smartProcess = $this->bitrix24->getSmartProcessByEntityType($portal, $entityTypeId);
+        $smartProcess = null;
+        try {
+            $smartProcess = $this->bitrix24->getSmartProcessByEntityType($portal, $entityTypeId);
+        } catch (\Throwable) {
+            // crm.type.get may be unavailable for some portals/scopes.
+            // Import can proceed without entity title metadata.
+        }
 
         $sourcePath = $validated['excel_file']->storeAs(
             'private/imports',
