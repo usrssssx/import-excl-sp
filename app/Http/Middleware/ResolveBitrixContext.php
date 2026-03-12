@@ -135,6 +135,17 @@ class ResolveBitrixContext
         $domain = preg_replace('#^https?://#', '', trim($domain));
         $domain = trim((string) $domain, '/');
 
+        if ($domain === '' && $memberId !== '') {
+            $existingPortal = Portal::query()
+                ->where('member_id', $memberId)
+                ->first(['domain', 'protocol']);
+
+            if ($existingPortal) {
+                $domain = (string) $existingPortal->domain;
+                $protocol = $this->normalizeProtocol($existingPortal->protocol);
+            }
+        }
+
         if ($domain === '' || $accessToken === '') {
             return null;
         }

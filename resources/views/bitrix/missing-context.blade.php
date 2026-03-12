@@ -82,14 +82,22 @@
 
         const finalizeWithUserId = (userId) => {
             const params = new URLSearchParams(window.location.search);
+            const alreadyAttempted = params.get('__ctx') === '1';
+            if (alreadyAttempted) {
+                writeStatus('Контекст не сохранился после автоматической попытки. Закройте и заново откройте приложение из меню Bitrix24.');
+                return;
+            }
+
             params.set('AUTH_ID', auth.access_token);
             if (auth.refresh_token) params.set('REFRESH_ID', auth.refresh_token);
             if (auth.expires) params.set('AUTH_EXPIRES', String(auth.expires));
             if (auth.member_id) params.set('member_id', auth.member_id);
             if (userId && Number(userId) > 0) params.set('USER_ID', String(userId));
-            if (typeof BX24.getDomain === 'function' && BX24.getDomain()) {
-                params.set('DOMAIN', BX24.getDomain());
-            }
+            const domain = (typeof BX24.getDomain === 'function' && BX24.getDomain())
+                || auth.domain
+                || auth.server_domain
+                || '';
+            if (domain) params.set('DOMAIN', domain);
 
             params.set('__ctx', '1');
             writeStatus('Контекст получен, перезагружаем приложение...');
