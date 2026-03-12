@@ -103,9 +103,11 @@
     const finish = (payload) => {
         render(payload);
         resultAct.style.display = 'flex';
-        if (payload.error_rows > 0) {
+        if (payload.error_report_url) {
             errorLink.style.display = '';
-            errorLink.href = payload.error_report_url || statusUrl.replace('/status', '/errors.xlsx');
+            errorLink.href = payload.error_report_url;
+        } else {
+            errorLink.style.display = 'none';
         }
     };
 
@@ -135,9 +137,11 @@
         bar.style.width   = pctVal + '%';
         pct.textContent   = pctVal + '%';
         resultAct.style.display = 'flex';
-        @if($importJob->error_rows > 0)
+        @if($importJob->error_file_path)
             errorLink.style.display = '';
             errorLink.href = '{{ route('imports.errors', $importJob) }}';
+        @else
+            errorLink.style.display = 'none';
         @endif
     }
 })();

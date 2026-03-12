@@ -92,6 +92,14 @@ class ImportController extends Controller
             ? (int) floor(($importJob->processed_rows / $importJob->total_rows) * 100)
             : ($importJob->isFinished() ? 100 : 0);
 
+        $errorReportUrl = null;
+        if ($importJob->error_file_path) {
+            $absolutePath = Storage::disk('local')->path($importJob->error_file_path);
+            if (is_file($absolutePath)) {
+                $errorReportUrl = route('imports.errors', $importJob);
+            }
+        }
+
         return response()->json([
             'status' => $importJob->status,
             'total_rows' => $importJob->total_rows,
@@ -100,9 +108,7 @@ class ImportController extends Controller
             'error_rows' => $importJob->error_rows,
             'progress_percent' => $progress,
             'finished' => $importJob->isFinished(),
-            'error_report_url' => $importJob->error_file_path
-                ? route('imports.errors', $importJob)
-                : null,
+            'error_report_url' => $errorReportUrl,
             'dashboard_url' => route('dashboard.index'),
         ]);
     }
