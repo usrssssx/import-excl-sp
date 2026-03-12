@@ -1,91 +1,145 @@
 @extends('layouts.app')
 
 @section('content')
+
     <div class="card" data-status-url="{{ route('imports.status', $importJob) }}" id="import-status-card">
-        <h2>Импорт #{{ $importJob->uuid }}</h2>
-        <p class="muted">Смарт-процесс: {{ $importJob->entity_title ?: ('Entity #'.$importJob->entity_type_id) }}</p>
 
-        <div class="progress" style="margin-bottom: 10px;">
-            <div class="progress-bar" id="progress-bar" style="width: 0;"></div>
+        <div class="card-header">
+            <div>
+                <div class="card-title">Импорт #<span class="mono">{{ substr($importJob->uuid, 0, 8) }}</span></div>
+                <div class="card-subtitle">{{ $importJob->entity_title ?: ('Entity #'.$importJob->entity_type_id) }}</div>
+            </div>
+            <span class="status status-{{ $importJob->status }}" id="status-badge" style="font-size:13px;">{{ $importJob->status }}</span>
         </div>
 
-        <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom: 14px;">
-            <div class="card"><strong id="status-text">{{ $importJob->status }}</strong><br><span class="muted small">Статус</span></div>
-            <div class="card"><strong id="processed-text">{{ $importJob->processed_rows }}</strong><br><span class="muted small">Обработано</span></div>
-            <div class="card"><strong id="success-text">{{ $importJob->success_rows }}</strong><br><span class="muted small">Успешно</span></div>
-            <div class="card"><strong id="error-text">{{ $importJob->error_rows }}</strong><br><span class="muted small">С ошибками</span></div>
-            <div class="card"><strong id="total-text">{{ $importJob->total_rows }}</strong><br><span class="muted small">Всего строк</span></div>
+        {{-- Progress bar --}}
+        <div style="margin-bottom: 20px;">
+            <div class="flex items-center justify-between gap-2" style="margin-bottom: 8px;">
+                <span class="text-small text-muted">Прогресс выполнения</span>
+                <span class="text-small text-strong" id="progress-pct">0%</span>
+            </div>
+            <div class="progress">
+                <div class="progress-bar" id="progress-bar" style="width: 0;"></div>
+            </div>
         </div>
 
-        <div id="result-actions" class="inline" style="display:none;">
-            <a class="btn" href="{{ route('dashboard.index') }}">Выбрать другой смарт-процесс</a>
-            <a class="btn btn-outline" href="{{ route('dashboard.index') }}">Загрузить еще файл</a>
-            <a class="btn btn-danger" id="error-report-link" href="#" style="display:none;">Скачать ошибки</a>
+        {{-- Stats grid --}}
+        <div class="grid grid-stats" style="margin-bottom: 20px;">
+            <div class="stat-card">
+                <div class="stat-value" id="processed-text">{{ $importJob->processed_rows }}</div>
+                <div class="stat-label">Обработано</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="success-text" style="color:var(--success);">{{ $importJob->success_rows }}</div>
+                <div class="stat-label">Успешно</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="error-text" style="color:var(--danger);">{{ $importJob->error_rows }}</div>
+                <div class="stat-label">Ошибки</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="total-text">{{ $importJob->total_rows ?: '—' }}</div>
+                <div class="stat-label">Всего строк</div>
+            </div>
         </div>
+
+        {{-- Result actions (shown after completion) --}}
+        <div id="result-actions" class="flex flex-wrap gap-2" style="display:none;">
+            <a class="btn btn-primary" href="{{ route('dashboard.index') }}">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                Список смарт-процессов
+            </a>
+            <a class="btn btn-outline" href="{{ route('dashboard.index') }}">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17,10 12,5 7,10"/><line x1="12" y1="5" x2="12" y2="19"/></svg>
+                Загрузить ещё файл
+            </a>
+            <a class="btn btn-danger" id="error-report-link" href="#" style="display:none;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Скачать строки с ошибками
+            </a>
+        </div>
+
     </div>
+
 @endsection
 
 @push('scripts')
 <script>
 (() => {
     const card = document.getElementById('import-status-card');
-    if (!card) {
-        return;
-    }
+    if (!card) return;
 
-    const statusUrl = card.dataset.statusUrl;
-    const bar = document.getElementById('progress-bar');
-    const statusText = document.getElementById('status-text');
-    const processedText = document.getElementById('processed-text');
-    const successText = document.getElementById('success-text');
-    const errorText = document.getElementById('error-text');
-    const totalText = document.getElementById('total-text');
-    const resultActions = document.getElementById('result-actions');
-    const errorReportLink = document.getElementById('error-report-link');
+    const statusUrl   = card.dataset.statusUrl;
+    const bar         = document.getElementById('progress-bar');
+    const pct         = document.getElementById('progress-pct');
+    const statusBadge = document.getElementById('status-badge');
+    const processedTx = document.getElementById('processed-text');
+    const successTx   = document.getElementById('success-text');
+    const errorTx     = document.getElementById('error-text');
+    const totalTx     = document.getElementById('total-text');
+    const resultAct   = document.getElementById('result-actions');
+    const errorLink   = document.getElementById('error-report-link');
 
     const render = (payload) => {
-        statusText.textContent = payload.status;
-        processedText.textContent = payload.processed_rows;
-        successText.textContent = payload.success_rows;
-        errorText.textContent = payload.error_rows;
-        totalText.textContent = payload.total_rows;
-        bar.style.width = `${payload.progress_percent}%`;
+        const processed = payload.processed_rows ?? 0;
+        const total     = payload.total_rows ?? 0;
+        const pctVal    = Number.isFinite(payload.progress_percent)
+            ? payload.progress_percent
+            : (total > 0 ? Math.round((processed / total) * 100) : (payload.finished ? 100 : 0));
 
-        if (payload.finished) {
-            resultActions.style.display = 'flex';
+        processedTx.textContent = processed;
+        successTx.textContent   = payload.success_rows ?? 0;
+        errorTx.textContent     = payload.error_rows ?? 0;
+        totalTx.textContent     = total || '—';
+        bar.style.width         = pctVal + '%';
+        pct.textContent         = pctVal + '%';
 
-            if (payload.error_report_url) {
-                errorReportLink.href = payload.error_report_url;
-                errorReportLink.style.display = 'inline-block';
-            }
+        // status badge
+        statusBadge.textContent = payload.status;
+        statusBadge.className   = 'status status-' + payload.status;
+        statusBadge.style.fontSize = '13px';
+    };
+
+    const finish = (payload) => {
+        render(payload);
+        resultAct.style.display = 'flex';
+        if (payload.error_rows > 0) {
+            errorLink.style.display = '';
+            errorLink.href = payload.error_report_url || statusUrl.replace('/status', '/errors.xlsx');
         }
     };
 
     const poll = async () => {
         try {
-            const response = await fetch(statusUrl, {
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'Accept': 'application/json',
-                },
-            });
-
-            if (!response.ok) {
-                return;
+            const res  = await fetch(statusUrl);
+            const data = await res.json();
+            render(data);
+            if (data.status === 'completed' || data.status === 'failed') {
+                finish(data);
+            } else {
+                setTimeout(poll, 1500);
             }
-
-            const payload = await response.json();
-            render(payload);
-
-            if (!payload.finished) {
-                setTimeout(poll, 2000);
-            }
-        } catch (e) {
+        } catch {
             setTimeout(poll, 3000);
         }
     };
 
-    poll();
+    const initialStatus = '{{ $importJob->status }}';
+    if (initialStatus !== 'completed' && initialStatus !== 'failed') {
+        poll();
+    } else {
+        // already done — show correct pct
+        const processed = {{ $importJob->processed_rows }};
+        const total     = {{ $importJob->total_rows ?? 0 }};
+        const pctVal    = total > 0 ? Math.round((processed / total) * 100) : 100;
+        bar.style.width   = pctVal + '%';
+        pct.textContent   = pctVal + '%';
+        resultAct.style.display = 'flex';
+        @if($importJob->error_rows > 0)
+            errorLink.style.display = '';
+            errorLink.href = '{{ route('imports.errors', $importJob) }}';
+        @endif
+    }
 })();
 </script>
 @endpush
