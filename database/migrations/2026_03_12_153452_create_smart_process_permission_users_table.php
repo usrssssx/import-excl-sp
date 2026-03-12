@@ -13,11 +13,14 @@ return new class extends Migration
     {
         Schema::create('smart_process_permission_users', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('smart_process_permission_id', 'spp_users_permission_fk')
-                ->constrained('smart_process_permissions')
-                ->cascadeOnDelete();
+            $table->unsignedBigInteger('smart_process_permission_id');
             $table->unsignedBigInteger('bitrix_user_id');
             $table->timestamps();
+
+            $table->foreign('smart_process_permission_id', 'spp_users_permission_fk')
+                ->references('id')
+                ->on('smart_process_permissions')
+                ->cascadeOnDelete();
 
             $table->unique(['smart_process_permission_id', 'bitrix_user_id'], 'spp_users_permission_user_unique');
         });
