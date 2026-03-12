@@ -70,7 +70,7 @@ class ResolveBitrixContext
         $refreshToken = $auth['refresh_token'] ?? $request->input('REFRESH_ID');
         $authExpires = $auth['expires'] ?? $request->input('AUTH_EXPIRES');
         $applicationToken = $auth['application_token'] ?? $request->input('APP_SID') ?? $request->input('APPLICATION_TOKEN');
-        $protocol = (string) ($auth['protocol'] ?? $request->input('PROTOCOL') ?? 'https');
+        $protocol = $this->normalizeProtocol($auth['protocol'] ?? $request->input('PROTOCOL') ?? 'https');
         $userId = (int) ($auth['user_id'] ?? $request->input('USER_ID') ?? 0);
 
         $domain = preg_replace('#^https?://#', '', trim($domain));
@@ -94,7 +94,7 @@ class ResolveBitrixContext
 
         return [
             'domain' => $domain,
-            'protocol' => $protocol ?: 'https',
+            'protocol' => $protocol,
             'member_id' => $memberId,
             'access_token' => $accessToken,
             'refresh_token' => $refreshToken ? (string) $refreshToken : null,
@@ -102,6 +102,18 @@ class ResolveBitrixContext
             'application_token' => $applicationToken ? (string) $applicationToken : null,
             'user_id' => $userId,
         ];
+    }
+
+    private function normalizeProtocol(mixed $protocol): string
+    {
+        $value = strtolower(trim((string) $protocol));
+        $value = str_replace('://', '', $value);
+
+        return match ($value) {
+            '1', 'https' => 'https',
+            '0', 'http' => 'http',
+            default => 'https',
+        };
     }
 
     /**
