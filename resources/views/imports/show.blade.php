@@ -138,8 +138,12 @@
         pct.textContent   = pctVal + '%';
         resultAct.style.display = 'flex';
         @if($importJob->error_file_path)
-            errorLink.style.display = '';
-            errorLink.href = '{{ route('imports.errors', $importJob) }}';
+            @if(!empty($errorReportUrl))
+                errorLink.style.display = '';
+                errorLink.href = '{{ $errorReportUrl }}';
+            @else
+                errorLink.style.display = 'none';
+            @endif
         @else
             errorLink.style.display = 'none';
         @endif

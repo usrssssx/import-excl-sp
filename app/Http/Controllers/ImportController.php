@@ -75,9 +75,18 @@ class ImportController extends Controller
 
         $this->authorizeImportAccess($request, $importJob, $user->canManagePermissions());
 
+        $errorReportUrl = null;
+        if ($importJob->error_file_path) {
+            $absolutePath = Storage::disk('local')->path($importJob->error_file_path);
+            if (is_file($absolutePath)) {
+                $errorReportUrl = route('imports.errors', $importJob);
+            }
+        }
+
         return view('imports.show', [
             'importJob' => $importJob,
             'user' => $user,
+            'errorReportUrl' => $errorReportUrl,
         ]);
     }
 
