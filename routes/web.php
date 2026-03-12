@@ -8,7 +8,6 @@ use App\Http\Controllers\SmartProcessTemplateController;
 use Illuminate\Support\Facades\Route;
 
 Route::match(['GET', 'POST'], '/bitrix/local/install', [BitrixContextController::class, 'install'])
-    ->middleware('bitrix.context')
     ->name('bitrix.install');
 
 Route::match(['GET', 'POST'], '/bitrix/local/app', [BitrixContextController::class, 'entry'])

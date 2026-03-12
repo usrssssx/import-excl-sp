@@ -2,25 +2,18 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Concerns\InteractsWithBitrixContext;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class BitrixContextController extends Controller
 {
-    use InteractsWithBitrixContext;
-
-    public function install(Request $request): View
+    public function install(): View
     {
-        return view('bitrix.install', [
-            'portal' => $this->currentPortal($request),
-            'user' => $this->currentPortalUser($request),
-        ]);
+        return view('bitrix.install');
     }
 
-    public function entry(): RedirectResponse
+    public function entry(Request $request, DashboardController $dashboardController): View
     {
-        return redirect()->route('dashboard.index');
+        return $dashboardController->index($request);
     }
 }
