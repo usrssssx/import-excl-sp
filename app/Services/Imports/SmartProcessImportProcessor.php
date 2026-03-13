@@ -134,9 +134,14 @@ class SmartProcessImportProcessor
      */
     private function recordError(ImportJob $importJob, int $rowNumber, array $errors, array $rowPayload): void
     {
+        $uniqueErrors = array_values(array_unique(array_map(
+            static fn (string $message): string => trim($message),
+            $errors,
+        )));
+
         $importJob->errors()->create([
             'row_number' => $rowNumber,
-            'error_message' => implode(' ', $errors),
+            'error_message' => implode('; ', $uniqueErrors),
             'row_payload' => $rowPayload,
         ]);
     }

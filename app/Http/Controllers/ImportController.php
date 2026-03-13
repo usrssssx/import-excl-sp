@@ -14,12 +14,26 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Validation\Rules\File;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class ImportController extends Controller
 {
     use InteractsWithBitrixContext;
+
+    /**
+     * @var array<int,string>
+     */
+    private const ALLOWED_UPLOAD_MIME_TYPES = [
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-excel',
+        'text/csv',
+        'application/csv',
+        'text/plain',
+        'text/comma-separated-values',
+        'application/octet-stream',
+    ];
 
     public function __construct(
         private readonly SmartProcessPermissionService $permissions,
@@ -35,7 +49,19 @@ class ImportController extends Controller
 
         $validated = $request->validate([
             'entity_type_id' => ['required', 'integer', 'min:1'],
-            'excel_file' => ['required', 'file', 'mimes:xlsx,xls,csv', 'max:20480'],
+            'excel_file' => [
+                'required',
+                File::types(['xlsx', 'xls', 'csv'])->max(20 * 1024),
+                'mimetypes:'.implode(',', self::ALLOWED_UPLOAD_MIME_TYPES),
+            ],
+        ], [
+            'entity_type_id.required' => 'Не выбран смарт-процесс для импорта.',
+            'entity_type_id.integer' => 'Неверный идентификатор смарт-процесса.',
+            'excel_file.required' => 'Выберите Excel-файл для загрузки.',
+            'excel_file.file' => 'Не удалось прочитать загруженный файл.',
+            'excel_file.max' => 'Файл слишком большой. Максимальный размер: 20 МБ.',
+            'excel_file.mimes' => 'Неверное расширение файла. Разрешены только .xlsx, .xls, .csv.',
+            'excel_file.mimetypes' => 'Неверный MIME-тип файла. Загрузите корректный Excel/CSV файл.',
         ]);
 
         $entityTypeId = (int) $validated['entity_type_id'];
@@ -78,9 +104,7 @@ class ImportController extends Controller
 
         $this->authorizeImportAccess($request, $importJob, $user->canManagePermissions());
 
-        $errorReportUrl = $importJob->error_rows > 0
-            ? URL::signedRoute('imports.errors.public', ['importJobUuid' => $importJob->uuid])
-            : null;
+        $errorReportUrl = $this->buildErrorReportUrl($importJob);
 
         return view('imports.show', [
             'importJob' => $importJob,
@@ -100,9 +124,7 @@ class ImportController extends Controller
             ? (int) floor(($importJob->processed_rows / $importJob->total_rows) * 100)
             : ($importJob->isFinished() ? 100 : 0);
 
-        $errorReportUrl = $importJob->error_rows > 0
-            ? URL::signedRoute('imports.errors.public', ['importJobUuid' => $importJob->uuid])
-            : null;
+        $errorReportUrl = $this->buildErrorReportUrl($importJob);
 
         return response()->json([
             'status' => $importJob->status,
@@ -114,6 +136,7 @@ class ImportController extends Controller
             'finished' => $importJob->isFinished(),
             'error_report_url' => $errorReportUrl,
             'dashboard_url' => route('dashboard.index'),
+            'same_sp_url' => route('dashboard.index').'#sp-'.$importJob->entity_type_id,
         ]);
     }
 
@@ -203,5 +226,41 @@ class ImportController extends Controller
         if (! $canManageAll) {
             abort_unless($importJob->bitrix_user_id === $user->bitrix_user_id, 403, 'Нет доступа к этому импорту.');
         }
+    }
+
+    private function buildErrorReportUrl(ImportJob $importJob): ?string
+    {
+        if ($importJob->error_rows <= 0 || ! $this->hasExistingErrorReport($importJob)) {
+            return null;
+        }
+
+        return URL::signedRoute('imports.errors.public', ['importJobUuid' => $importJob->uuid]);
+    }
+
+    private function hasExistingErrorReport(ImportJob $importJob): bool
+    {
+        if ($importJob->error_file_path === null) {
+            return false;
+        }
+
+        $normalizedRelativePath = ltrim(str_replace('\\', '/', $importJob->error_file_path), '/');
+        $legacyRelativePath = Str::startsWith($normalizedRelativePath, 'private/')
+            ? Str::after($normalizedRelativePath, 'private/')
+            : null;
+
+        $relativeCandidates = array_values(array_unique(array_filter([
+            $normalizedRelativePath,
+            $legacyRelativePath,
+        ])));
+
+        foreach ($relativeCandidates as $relativeCandidate) {
+            if (Storage::disk('local')->exists($relativeCandidate)) {
+                return true;
+            }
+        }
+
+        $legacyAbsolutePath = storage_path('app/'.$normalizedRelativePath);
+
+        return is_file($legacyAbsolutePath);
     }
 }

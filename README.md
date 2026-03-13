@@ -1,40 +1,40 @@
 # Bitrix24 Excel Import (Laravel)
 
-Приложение для Bitrix24 (формат `local app`, iframe + внешний backend), которое загружает данные из Excel в элементы смарт-процессов (Dynamic Entity / CRM 2.0).
+Веб-приложение в формате Bitrix24 `local app` (`iframe + внешний backend`) для загрузки Excel-строк в смарт-процессы (CRM Dynamic Entities).
 
-## Что реализовано
+## MVP-статус
 
-- Работа в формате Bitrix24 local app:
-  - endpoint первичной установки
-  - endpoint основного обработчика iframe
-  - сохранение контекста портала и токенов (`AUTH_ID`, `REFRESH_ID`, `DOMAIN`, `member_id`, `USER_ID`)
-- Админ-раздел прав доступа:
-  - включение/выключение каждого смарт-процесса
-  - доступ для всех пользователей
-  - доступ по `user ID`
-  - доступ по `department ID`
-- Пользовательский раздел:
-  - список доступных СП
-  - скачивание Excel-шаблона по выбранному СП
-  - загрузка Excel-файла
-- Импорт:
-  - парсинг Excel (первая вкладка)
-  - валидация строк
-  - создание элементов через `batch` + `crm.item.add`
-  - прогресс загрузки (queued/running/completed/failed)
-  - логирование ошибок по строкам
-  - генерация отдельного Excel с ошибочными строками и колонкой `Ошибка`
-- Формат кодов пользовательских полей в шаблоне: `ufCrm_XX_YYYYYY`.
+- Матрица требований и статус реализации: `docs/acceptance.md`
+- Эксплуатация (деплой, очередь, бэкапы, мониторинг): `docs/ops.md`
+
+## Реализовано
+
+- Контекст Bitrix24 (`AUTH_ID`, `REFRESH_ID`, `DOMAIN`, `member_id`, `USER_ID`) сохраняется в БД и сессии.
+- Список смарт-процессов через `crm.type.list` с фильтрацией по правам.
+- Админка прав:
+  - вкл/выкл СП;
+  - доступ для всех пользователей;
+  - доступ по `user ID`;
+  - доступ по `department ID`.
+- Отдельная админка `Админы приложения` (без правки `.env`).
+- Генерация Excel-шаблона по полям `crm.item.fields`.
+- Нормализация UF-кодов в шаблоне: `UF_CRM_*` -> `ufCrm_*`.
+- Импорт через очередь:
+  - чтение/валидация Excel;
+  - пакетная отправка в Bitrix (`batch` + `crm.item.add`);
+  - прогресс и итоговая статистика;
+  - лог ошибок по строкам;
+  - выгрузка Excel с ошибками (`Ошибка`).
 
 ## Технологии
 
-- PHP 8.5+
+- PHP 8.3+
 - Laravel 12
-- MySQL (рекомендуется для production; локально можно sqlite)
+- MySQL
 - PhpSpreadsheet
 - Bitrix24 REST API
 
-## Быстрый старт
+## Быстрый старт (локально)
 
 ```bash
 composer install
@@ -42,7 +42,14 @@ cp .env.example .env
 php artisan key:generate
 ```
 
-Настройте БД в `.env`, затем:
+Заполните в `.env`:
+
+- `DB_*`
+- `APP_URL` (для внешнего доступа)
+- `BITRIX24_CLIENT_ID`
+- `BITRIX24_CLIENT_SECRET`
+
+Дальше:
 
 ```bash
 php artisan migrate
@@ -50,59 +57,54 @@ php artisan queue:work
 php artisan serve
 ```
 
-Приложение использует очередь (`QUEUE_CONNECTION=database`) для импорта файлов и отображения прогресса.
+## Настройки Bitrix24 Local App
 
-## Настройки окружения
-
-```env
-BITRIX24_CLIENT_ID=
-BITRIX24_CLIENT_SECRET=
-BITRIX24_OAUTH_SERVER=https://oauth.bitrix.info/oauth/token/
-BITRIX24_INTEGRATOR_USER_IDS=5,12
-BITRIX24_BATCH_SIZE=50
-```
-
-## Настройка local app в Bitrix24
-
-В карточке local application укажите:
+В настройках приложения Bitrix24:
 
 - `Path your handler`: `https://<your-domain>/bitrix/local/app`
 - `Path to initial installation handler`: `https://<your-domain>/bitrix/local/install`
 
 Важно:
 
-- local app устанавливается администратором портала;
-- открывать приложение нужно из интерфейса Bitrix24 (чтобы передавался контекст `AUTH_ID/DOMAIN/USER_ID`).
+- открывать приложение только из интерфейса Bitrix24;
+- при прямом открытии URL без контекста будет ошибка `Контекст Bitrix24 не найден`.
 
-Для локальной разработки используйте туннель (например, ngrok/cloudflared), чтобы Bitrix24 мог открыть ваш локальный сервер.
+## Ключевые env-переменные
 
-## Основные маршруты
+```env
+BITRIX24_CLIENT_ID=
+BITRIX24_CLIENT_SECRET=
+BITRIX24_OAUTH_SERVER=https://oauth.bitrix.info/oauth/token/
+BITRIX24_INTEGRATOR_USER_IDS=
+BITRIX24_BATCH_SIZE=50
+```
 
-- `GET|POST /bitrix/local/install` — install handler
-- `GET|POST /bitrix/local/app` — iframe entry handler
-- `GET /app` — дашборд доступных смарт-процессов
-- `GET /app/admin/permissions` — админ-настройка прав
+## Маршруты
+
+- `GET|POST /bitrix/local/install` — установка local app
+- `GET|POST /bitrix/local/app` — вход в iframe
+- `GET /app` — дашборд
 - `GET /app/templates/{entityTypeId}` — скачать шаблон
-- `POST /app/imports` — загрузить Excel в очередь
-- `GET /app/imports/{uuid}` — прогресс задачи
-- `GET /app/imports/{uuid}/errors.xlsx` — Excel с ошибками
+- `POST /app/imports` — создать задачу импорта
+- `GET /app/imports/{importJob}` — экран прогресса/результата
+- `GET /public/import-errors/{importJobUuid}` — публичная signed-ссылка на файл ошибок
+- `GET /app/admin/permissions` — права на СП
+- `GET /app/admin/app-admins` — админы приложения
 
-## Git flow (обязательно)
+## Git flow
 
-Рабочая схема веток:
+- Разработка: ветка `test`
+- Релиз/деплой: ветка `main`
 
-- `test` — разработка и первичные коммиты
-- `main` — стабильная ветка для production
+Минимальный процесс:
 
-Рекомендуемый процесс:
-
-1. Вести разработку в `test`.
-2. Проверять в тестовом окружении.
-3. Делать merge `test -> main`.
-4. Деплоить в production только из `main`.
+1. Коммиты в `test`.
+2. Проверка smoke-чеков.
+3. `merge test -> main`.
+4. Деплой только из `main`.
 
 ## Ограничения MVP
 
-- Проверка подписи входящего запроса Bitrix24 не включена (можно добавить отдельно).
-- Поддержка сложных составных типов полей (файлы, привязки к сущностям в расширенном режиме) минимальная.
-- Для стабильной работы в проде нужен постоянно запущенный worker очереди.
+- Нет проверки подписи входящих запросов Bitrix24 по `application_token`.
+- Не покрыты сложные типы полей (например, upload `file` и расширенные привязки).
+- Для продакшена обязательны постоянный queue worker, бэкапы и мониторинг.
