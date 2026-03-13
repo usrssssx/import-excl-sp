@@ -4,6 +4,7 @@ namespace App\Services\Imports;
 
 use App\Models\ImportJob;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Shared\Date;
@@ -26,7 +27,7 @@ class ExcelImportService
         $headers = [];
 
         for ($column = 1; $column <= $highestColumnIndex; $column++) {
-            $rawHeader = trim((string) $sheet->getCellByColumnAndRow($column, 1)->getCalculatedValue());
+            $rawHeader = trim((string) $sheet->getCell($this->cellAddress($column, 1))->getCalculatedValue());
             if ($rawHeader === '') {
                 continue;
             }
@@ -47,7 +48,7 @@ class ExcelImportService
             $hasAnyValue = false;
 
             foreach ($headers as $header) {
-                $cell = $sheet->getCellByColumnAndRow($header['column'], $rowNumber);
+                $cell = $sheet->getCell($this->cellAddress((int) $header['column'], $rowNumber));
                 $value = $cell->getCalculatedValue();
 
                 if (is_string($value)) {
@@ -154,8 +155,9 @@ class ExcelImportService
             $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($column))->setAutoSize(true);
         }
 
-        $relativePath = 'private/errors/import_'.$importJob->uuid.'_errors.xlsx';
-        $absolutePath = storage_path('app/'.$relativePath);
+        // local disk root is storage/app/private, so keep relative paths without "private/" prefix.
+        $relativePath = 'errors/import_'.$importJob->uuid.'_errors.xlsx';
+        $absolutePath = Storage::disk('local')->path($relativePath);
         $directory = dirname($absolutePath);
 
         if (! is_dir($directory)) {
@@ -165,6 +167,11 @@ class ExcelImportService
         (new Xlsx($spreadsheet))->save($absolutePath);
 
         return $relativePath;
+    }
+
+    private function cellAddress(int $column, int $row): string
+    {
+        return Coordinate::stringFromColumnIndex($column).$row;
     }
 
     /**

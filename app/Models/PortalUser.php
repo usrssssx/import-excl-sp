@@ -5,10 +5,13 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Schema;
 
 class PortalUser extends Model
 {
     use HasFactory;
+
+    private static ?bool $hasPortalAppAdminsTable = null;
 
     protected $fillable = [
         'portal_id',
@@ -37,6 +40,21 @@ class PortalUser extends Model
 
     public function canManagePermissions(): bool
     {
-        return $this->is_admin || $this->is_integrator;
+        if ($this->is_admin || $this->is_integrator) {
+            return true;
+        }
+
+        if (self::$hasPortalAppAdminsTable === null) {
+            self::$hasPortalAppAdminsTable = Schema::hasTable('portal_app_admins');
+        }
+
+        if (! self::$hasPortalAppAdminsTable) {
+            return false;
+        }
+
+        return PortalAppAdmin::query()
+            ->where('portal_id', $this->portal_id)
+            ->where('bitrix_user_id', $this->bitrix_user_id)
+            ->exists();
     }
 }

@@ -25,6 +25,15 @@ class SmartProcessPermissionService
             }));
         }
 
+        $hasPermissionRules = SmartProcessPermission::query()
+            ->where('portal_id', $portal->id)
+            ->exists();
+
+        // First run: until permissions are configured, allow all smart processes.
+        if (! $hasPermissionRules) {
+            return $smartProcesses;
+        }
+
         $permissions = SmartProcessPermission::query()
             ->where('portal_id', $portal->id)
             ->where('is_enabled', true)
@@ -62,6 +71,15 @@ class SmartProcessPermissionService
     public function canUpload(PortalUser $user, int $entityTypeId): bool
     {
         if ($user->canManagePermissions()) {
+            return true;
+        }
+
+        $hasPermissionRules = SmartProcessPermission::query()
+            ->where('portal_id', $user->portal_id)
+            ->exists();
+
+        // First run: until permissions are configured, allow upload.
+        if (! $hasPermissionRules) {
             return true;
         }
 

@@ -14,6 +14,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'bitrix.context' => \App\Http\Middleware\ResolveBitrixContext::class,
         ]);
+
+        // Bitrix24 sends signed context to these endpoints from outside Laravel forms,
+        // so they must bypass the default CSRF token validation.
+        $middleware->validateCsrfTokens(except: [
+            'bitrix/local/install',
+            'bitrix/local/app',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

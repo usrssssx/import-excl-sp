@@ -6,12 +6,14 @@ use App\Http\Controllers\Concerns\InteractsWithBitrixContext;
 use App\Jobs\ProcessSmartProcessImport;
 use App\Models\ImportJob;
 use App\Services\Bitrix24\Bitrix24Service;
+use App\Services\Imports\ExcelImportService;
 use App\Services\Permissions\SmartProcessPermissionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\URL;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
@@ -22,6 +24,7 @@ class ImportController extends Controller
     public function __construct(
         private readonly SmartProcessPermissionService $permissions,
         private readonly Bitrix24Service $bitrix24,
+        private readonly ExcelImportService $excelImport,
     ) {
     }
 
@@ -38,7 +41,13 @@ class ImportController extends Controller
         $entityTypeId = (int) $validated['entity_type_id'];
         abort_unless($this->permissions->canUpload($user, $entityTypeId), 403, 'Нет доступа к выбранному смарт-процессу.');
 
-        $smartProcess = $this->bitrix24->getSmartProcessByEntityType($portal, $entityTypeId);
+        $smartProcess = null;
+        try {
+            $smartProcess = $this->bitrix24->getSmartProcessByEntityType($portal, $entityTypeId);
+        } catch (\Throwable) {
+            // crm.type.get may be unavailable for some portals/scopes.
+            // Import can proceed without entity title metadata.
+        }
 
         $sourcePath = $validated['excel_file']->storeAs(
             'private/imports',
@@ -69,9 +78,14 @@ class ImportController extends Controller
 
         $this->authorizeImportAccess($request, $importJob, $user->canManagePermissions());
 
+        $errorReportUrl = $importJob->error_rows > 0
+            ? URL::signedRoute('imports.errors.public', ['importJobUuid' => $importJob->uuid])
+            : null;
+
         return view('imports.show', [
             'importJob' => $importJob,
             'user' => $user,
+            'errorReportUrl' => $errorReportUrl,
         ]);
     }
 
@@ -84,7 +98,11 @@ class ImportController extends Controller
 
         $progress = $importJob->total_rows > 0
             ? (int) floor(($importJob->processed_rows / $importJob->total_rows) * 100)
-            : 0;
+            : ($importJob->isFinished() ? 100 : 0);
+
+        $errorReportUrl = $importJob->error_rows > 0
+            ? URL::signedRoute('imports.errors.public', ['importJobUuid' => $importJob->uuid])
+            : null;
 
         return response()->json([
             'status' => $importJob->status,
@@ -94,9 +112,7 @@ class ImportController extends Controller
             'error_rows' => $importJob->error_rows,
             'progress_percent' => $progress,
             'finished' => $importJob->isFinished(),
-            'error_report_url' => $importJob->error_file_path
-                ? route('imports.errors', $importJob)
-                : null,
+            'error_report_url' => $errorReportUrl,
             'dashboard_url' => route('dashboard.index'),
         ]);
     }
@@ -106,9 +122,72 @@ class ImportController extends Controller
         $user = $this->currentPortalUser($request);
         $this->authorizeImportAccess($request, $importJob, $user->canManagePermissions());
 
-        abort_unless($importJob->error_file_path !== null, 404, 'Файл с ошибками пока недоступен.');
+        return $this->downloadErrorsFile($importJob);
+    }
 
-        $absolutePath = Storage::disk('local')->path($importJob->error_file_path);
+    public function downloadErrorsPublic(string $importJobUuid): BinaryFileResponse
+    {
+        $importJob = ImportJob::query()->where('uuid', $importJobUuid)->firstOrFail();
+
+        return $this->downloadErrorsFile($importJob);
+    }
+
+    private function downloadErrorsFile(ImportJob $importJob): BinaryFileResponse
+    {
+        abort_if($importJob->error_rows <= 0, 404, 'Ошибок в этом импорте нет.');
+
+        $absolutePath = null;
+        if ($importJob->error_file_path !== null) {
+            $normalizedRelativePath = ltrim(str_replace('\\', '/', $importJob->error_file_path), '/');
+            $legacyRelativePath = Str::startsWith($normalizedRelativePath, 'private/')
+                ? Str::after($normalizedRelativePath, 'private/')
+                : null;
+
+            $relativeCandidates = array_values(array_unique(array_filter([
+                $normalizedRelativePath,
+                $legacyRelativePath,
+            ])));
+
+            foreach ($relativeCandidates as $relativeCandidate) {
+                $candidatePath = Storage::disk('local')->path($relativeCandidate);
+                if (! is_file($candidatePath)) {
+                    continue;
+                }
+
+                $absolutePath = $candidatePath;
+
+                if ($importJob->error_file_path !== $relativeCandidate) {
+                    $importJob->forceFill([
+                        'error_file_path' => $relativeCandidate,
+                    ])->save();
+                }
+
+                break;
+            }
+
+            if ($absolutePath === null) {
+                $legacyAbsolutePath = storage_path('app/'.$normalizedRelativePath);
+                if (is_file($legacyAbsolutePath)) {
+                    $absolutePath = $legacyAbsolutePath;
+
+                    if ($legacyRelativePath !== null) {
+                        $importJob->forceFill([
+                            'error_file_path' => $legacyRelativePath,
+                        ])->save();
+                    }
+                }
+            }
+        }
+
+        if ($absolutePath === null) {
+            $relativePath = $this->excelImport->generateErrorReport($importJob->fresh());
+            $importJob->forceFill([
+                'error_file_path' => $relativePath,
+            ])->save();
+
+            $absolutePath = Storage::disk('local')->path($relativePath);
+        }
+
         abort_unless(is_file($absolutePath), 404, 'Файл с ошибками не найден.');
 
         return response()->download($absolutePath, 'import-errors-'.$importJob->uuid.'.xlsx');

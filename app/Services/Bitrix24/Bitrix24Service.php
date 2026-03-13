@@ -3,6 +3,8 @@
 namespace App\Services\Bitrix24;
 
 use App\Models\Portal;
+use Illuminate\Support\Str;
+use RuntimeException;
 
 class Bitrix24Service
 {
@@ -90,6 +92,10 @@ class Bitrix24Service
                 continue;
             }
 
+            if (! $this->shouldExposeField((string) $apiCode, $meta)) {
+                continue;
+            }
+
             $displayCode = $this->fieldCode->toDisplayCode((string) $apiCode);
             $title = (string) ($meta['title'] ?? $meta['formLabel'] ?? $meta['listLabel'] ?? $apiCode);
             $type = strtolower((string) ($meta['type'] ?? $meta['TYPE'] ?? 'string'));
@@ -110,6 +116,76 @@ class Bitrix24Service
         });
 
         return $normalized;
+    }
+
+    /**
+     * @param  array<string,mixed>  $meta
+     */
+    private function shouldExposeField(string $apiCode, array $meta): bool
+    {
+        $normalizedCode = strtolower(str_replace(['_', '-'], '', $apiCode));
+
+        // Service/system fields are populated by Bitrix and should not be imported from Excel.
+        $systemCodes = [
+            'id',
+            'createdby',
+            'updatedby',
+            'movedby',
+            'createdtime',
+            'updatedtime',
+            'movedtime',
+            'lastactivitytime',
+            'lastcommunicationtime',
+        ];
+
+        if (in_array($normalizedCode, $systemCodes, true)) {
+            return false;
+        }
+
+        if ($this->isTruthy($meta['isReadOnly'] ?? null)
+            || $this->isTruthy($meta['readOnly'] ?? null)
+            || $this->isTruthy($meta['readonly'] ?? null)
+            || $this->isTruthy($meta['isImmutable'] ?? null)
+            || $this->isTruthy($meta['immutable'] ?? null)
+            || $this->isTruthy($meta['isSystem'] ?? null)
+            || $this->isTruthy($meta['isComputed'] ?? null)
+            || $this->isTruthy($meta['isCalculated'] ?? null)
+        ) {
+            return false;
+        }
+
+        $operations = $meta['operations'] ?? null;
+        if (is_array($operations)) {
+            $canAdd = $operations['add'] ?? $operations['ADD'] ?? null;
+            if ($canAdd !== null && ! $this->isTruthy($canAdd)) {
+                return false;
+            }
+        }
+
+        // Bitrix file fields require multipart upload flow; plain Excel import should skip them.
+        $type = strtolower((string) ($meta['type'] ?? $meta['TYPE'] ?? ''));
+        if ($type === 'file') {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function isTruthy(mixed $value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_int($value) || is_float($value)) {
+            return $value !== 0;
+        }
+
+        if (is_string($value)) {
+            return in_array(Str::lower(trim($value)), ['1', 'y', 'yes', 'true'], true);
+        }
+
+        return false;
     }
 
     /**
@@ -137,6 +213,10 @@ class Bitrix24Service
             'halt' => 0,
             'cmd' => $commands,
         ]);
+
+        if (isset($response['error'])) {
+            throw new RuntimeException((string) ($response['error_description'] ?? $response['error']));
+        }
 
         $resultNode = $response['result'] ?? [];
 

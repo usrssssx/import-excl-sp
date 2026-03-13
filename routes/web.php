@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\AppAdminController;
 use App\Http\Controllers\Admin\PermissionController;
 use App\Http\Controllers\BitrixContextController;
 use App\Http\Controllers\DashboardController;
@@ -8,12 +9,16 @@ use App\Http\Controllers\SmartProcessTemplateController;
 use Illuminate\Support\Facades\Route;
 
 Route::match(['GET', 'POST'], '/bitrix/local/install', [BitrixContextController::class, 'install'])
-    ->middleware('bitrix.context')
     ->name('bitrix.install');
 
 Route::match(['GET', 'POST'], '/bitrix/local/app', [BitrixContextController::class, 'entry'])
     ->middleware('bitrix.context')
     ->name('bitrix.entry');
+
+Route::get('/public/import-errors/{importJobUuid}', [ImportController::class, 'downloadErrorsPublic'])
+    ->middleware('signed')
+    ->whereUuid('importJobUuid')
+    ->name('imports.errors.public');
 
 Route::prefix('app')->middleware('bitrix.context')->group(function (): void {
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard.index');
@@ -31,6 +36,12 @@ Route::prefix('app')->middleware('bitrix.context')->group(function (): void {
     Route::post('/admin/permissions/{entityTypeId}', [PermissionController::class, 'update'])
         ->whereNumber('entityTypeId')
         ->name('admin.permissions.update');
+
+    Route::get('/admin/app-admins', [AppAdminController::class, 'index'])->name('admin.app-admins.index');
+    Route::post('/admin/app-admins', [AppAdminController::class, 'store'])->name('admin.app-admins.store');
+    Route::delete('/admin/app-admins/{appAdmin}', [AppAdminController::class, 'destroy'])
+        ->whereNumber('appAdmin')
+        ->name('admin.app-admins.destroy');
 });
 
 Route::get('/', static fn () => redirect()->route('dashboard.index'));

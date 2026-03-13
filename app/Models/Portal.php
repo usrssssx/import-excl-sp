@@ -39,6 +39,11 @@ class Portal extends Model
         return $this->hasMany(SmartProcessPermission::class);
     }
 
+    public function appAdmins(): HasMany
+    {
+        return $this->hasMany(PortalAppAdmin::class);
+    }
+
     public function importJobs(): HasMany
     {
         return $this->hasMany(ImportJob::class);
@@ -47,7 +52,15 @@ class Portal extends Model
     public function baseUrl(): string
     {
         $domain = preg_replace('#^https?://#', '', (string) $this->domain);
+        $protocol = strtolower(trim((string) $this->protocol));
+        $protocol = str_replace('://', '', $protocol);
 
-        return sprintf('%s://%s', $this->protocol ?: 'https', $domain);
+        $protocol = match ($protocol) {
+            '1', 'https' => 'https',
+            '0', 'http' => 'http',
+            default => 'https',
+        };
+
+        return sprintf('%s://%s', $protocol, $domain);
     }
 }
