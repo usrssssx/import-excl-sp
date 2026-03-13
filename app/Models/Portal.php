@@ -39,6 +39,11 @@ class Portal extends Model
         return $this->hasMany(SmartProcessPermission::class);
     }
 
+    public function appAdmins(): HasMany
+    {
+        return $this->hasMany(PortalAppAdmin::class);
+    }
+
     public function importJobs(): HasMany
     {
         return $this->hasMany(ImportJob::class);

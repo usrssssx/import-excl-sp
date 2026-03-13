@@ -10,6 +10,10 @@
             <span class="badge badge-blue">{{ count($smartProcesses) }} СП</span>
         </div>
 
+        <div style="margin-bottom: 14px;">
+            <a href="{{ route('admin.app-admins.index') }}" class="btn btn-outline btn-sm">Управление админами приложения</a>
+        </div>
+
         <div class="table-wrap">
             <table class="permissions-table">
                 <thead>

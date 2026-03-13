@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\AppAdminController;
 use App\Http\Controllers\Admin\PermissionController;
 use App\Http\Controllers\BitrixContextController;
 use App\Http\Controllers\DashboardController;
@@ -35,6 +36,12 @@ Route::prefix('app')->middleware('bitrix.context')->group(function (): void {
     Route::post('/admin/permissions/{entityTypeId}', [PermissionController::class, 'update'])
         ->whereNumber('entityTypeId')
         ->name('admin.permissions.update');
+
+    Route::get('/admin/app-admins', [AppAdminController::class, 'index'])->name('admin.app-admins.index');
+    Route::post('/admin/app-admins', [AppAdminController::class, 'store'])->name('admin.app-admins.store');
+    Route::delete('/admin/app-admins/{appAdmin}', [AppAdminController::class, 'destroy'])
+        ->whereNumber('appAdmin')
+        ->name('admin.app-admins.destroy');
 });
 
 Route::get('/', static fn () => redirect()->route('dashboard.index'));
