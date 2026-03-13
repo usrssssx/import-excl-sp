@@ -3,6 +3,7 @@
 namespace App\Services\Imports;
 
 use App\Models\ImportJob;
+use App\Services\Bitrix24\BitrixFieldCode;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
@@ -10,9 +11,14 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Shared\Date;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use RuntimeException;
 
 class ExcelImportService
 {
+    public function __construct(private readonly BitrixFieldCode $fieldCode)
+    {
+    }
+
     /**
      * @return array{headers:array<int,array{header:string,title:string,code:string,column:int}>,rows:array<int,array{rowNumber:int,values:array<string,mixed>}>}
      */
@@ -39,6 +45,24 @@ class ExcelImportService
                 'code' => $parsed['code'],
                 'column' => $column,
             ];
+        }
+
+        if ($headers === []) {
+            throw new RuntimeException('В первой строке файла не найдены заголовки колонок. Используйте шаблон, скачанный из приложения.');
+        }
+
+        $codeCounters = [];
+        foreach ($headers as $header) {
+            $code = $header['code'];
+            $codeCounters[$code] = ($codeCounters[$code] ?? 0) + 1;
+        }
+
+        $duplicateCodes = array_keys(array_filter($codeCounters, static fn (int $count): bool => $count > 1));
+        if ($duplicateCodes !== []) {
+            throw new RuntimeException(sprintf(
+                'В строке заголовков найдены дубли кодов полей: %s. Проверьте шаблон и удалите дубликаты.',
+                implode(', ', $duplicateCodes),
+            ));
         }
 
         $rows = [];
@@ -68,7 +92,7 @@ class ExcelImportService
 
             $rows[] = [
                 'rowNumber' => $rowNumber,
-                'values' => $values,
+                'values' => $this->normalizeRowValuesByDisplayCodes($values),
             ];
         }
 
@@ -87,13 +111,18 @@ class ExcelImportService
     {
         $fields = [];
         $errors = [];
+        $normalizedRowValues = $this->normalizeRowValuesByDisplayCodes($rowValues);
 
         foreach ($fieldMap as $displayCode => $meta) {
-            $value = $rowValues[$displayCode] ?? null;
+            $value = $normalizedRowValues[$displayCode] ?? null;
 
             if ($this->isEmpty($value)) {
                 if ($meta['isRequired']) {
-                    $errors[] = sprintf('Поле "%s" (%s) обязательно.', $meta['title'], $displayCode);
+                    $errors[] = sprintf(
+                        'Поле "%s" (%s) обязательно для заполнения.',
+                        $meta['title'],
+                        $displayCode,
+                    );
                 }
 
                 continue;
@@ -182,13 +211,13 @@ class ExcelImportService
         if (preg_match('/^(.*)\(([^)]+)\)\s*$/u', $rawHeader, $matches) === 1) {
             return [
                 'title' => trim($matches[1]),
-                'code' => trim($matches[2]),
+                'code' => $this->fieldCode->normalizeDisplayCode(trim($matches[2])),
             ];
         }
 
         return [
             'title' => $rawHeader,
-            'code' => $rawHeader,
+            'code' => $this->fieldCode->normalizeDisplayCode($rawHeader),
         ];
     }
 
@@ -262,11 +291,27 @@ class ExcelImportService
      */
     private function castInteger(mixed $value, array $meta): array
     {
-        if (is_numeric($value)) {
+        if (is_int($value)) {
+            return [$value, null];
+        }
+
+        if (is_float($value) && floor($value) === $value) {
             return [(int) $value, null];
         }
 
-        return [null, sprintf('Поле "%s" (%s): ожидается целое число.', $meta['title'], $meta['code'])];
+        if (is_string($value)) {
+            $normalized = str_replace(["\xc2\xa0", ' '], '', trim($value));
+            if ($normalized !== '' && preg_match('/^-?\d+$/', $normalized) === 1) {
+                return [(int) $normalized, null];
+            }
+        }
+
+        return [null, sprintf(
+            'Поле "%s" (%s): ожидается целое число, получено "%s".',
+            $meta['title'],
+            $meta['code'],
+            $this->stringifyValue($value),
+        )];
     }
 
     /**
@@ -276,14 +321,20 @@ class ExcelImportService
     private function castFloat(mixed $value, array $meta): array
     {
         if (is_string($value)) {
-            $value = str_replace(',', '.', trim($value));
+            $value = str_replace(["\xc2\xa0", ' '], '', trim($value));
+            $value = str_replace(',', '.', $value);
         }
 
         if (is_numeric($value)) {
             return [(float) $value, null];
         }
 
-        return [null, sprintf('Поле "%s" (%s): ожидается число.', $meta['title'], $meta['code'])];
+        return [null, sprintf(
+            'Поле "%s" (%s): ожидается число, получено "%s".',
+            $meta['title'],
+            $meta['code'],
+            $this->stringifyValue($value),
+        )];
     }
 
     /**
@@ -302,7 +353,12 @@ class ExcelImportService
             return ['N', null];
         }
 
-        return [null, sprintf('Поле "%s" (%s): ожидается булево значение (да/нет).', $meta['title'], $meta['code'])];
+        return [null, sprintf(
+            'Поле "%s" (%s): ожидается булево значение (да/нет, true/false, 1/0), получено "%s".',
+            $meta['title'],
+            $meta['code'],
+            $this->stringifyValue($value),
+        )];
     }
 
     /**
@@ -311,17 +367,54 @@ class ExcelImportService
      */
     private function castDate(mixed $value, array $meta, bool $withTime): array
     {
-        try {
-            if (is_numeric($value)) {
+        if (is_numeric($value) && ! is_string($value)) {
+            try {
                 $date = Carbon::instance(Date::excelToDateTimeObject((float) $value));
-            } else {
-                $date = Carbon::parse((string) $value);
+
+                return [$withTime ? $date->format('Y-m-d H:i:s') : $date->format('Y-m-d'), null];
+            } catch (\Throwable) {
+                return [null, sprintf(
+                    'Поле "%s" (%s): неверный формат даты.',
+                    $meta['title'],
+                    $meta['code'],
+                )];
+            }
+        }
+
+        $stringValue = trim((string) $value);
+        if ($stringValue === '') {
+            return [null, sprintf(
+                'Поле "%s" (%s): пустое значение даты.',
+                $meta['title'],
+                $meta['code'],
+            )];
+        }
+
+        foreach ($this->supportedDateFormats($withTime) as $format) {
+            try {
+                $date = Carbon::createFromFormat($format, $stringValue);
+            } catch (\Throwable) {
+                continue;
+            }
+            $errors = Carbon::getLastErrors();
+            $hasFormatErrors = ! is_array($errors)
+                || (($errors['warning_count'] ?? 0) > 0)
+                || (($errors['error_count'] ?? 0) > 0);
+
+            if (! $date || $hasFormatErrors) {
+                continue;
             }
 
             return [$withTime ? $date->format('Y-m-d H:i:s') : $date->format('Y-m-d'), null];
-        } catch (\Throwable) {
-            return [null, sprintf('Поле "%s" (%s): неверный формат даты.', $meta['title'], $meta['code'])];
         }
+
+        return [null, sprintf(
+            'Поле "%s" (%s): неверный формат даты "%s". Используйте %s.',
+            $meta['title'],
+            $meta['code'],
+            $this->stringifyValue($value),
+            $withTime ? 'YYYY-MM-DD HH:MM:SS' : 'YYYY-MM-DD',
+        )];
     }
 
     /**
@@ -346,6 +439,76 @@ class ExcelImportService
             }
         }
 
-        return [null, sprintf('Поле "%s" (%s): значение "%s" не найдено в списке.', $meta['title'], $meta['code'], $stringValue)];
+        $hints = array_map(
+            static fn (array $item): string => $item['id'].'='.$item['title'],
+            array_slice($meta['items'], 0, 5),
+        );
+        $hintText = $hints !== [] ? ' Примеры: '.implode(', ', $hints).'.' : '';
+
+        return [null, sprintf(
+            'Поле "%s" (%s): значение "%s" не найдено в списке.%s',
+            $meta['title'],
+            $meta['code'],
+            $stringValue,
+            $hintText,
+        )];
+    }
+
+    /**
+     * @param  array<string,mixed>  $rowValues
+     * @return array<string,mixed>
+     */
+    private function normalizeRowValuesByDisplayCodes(array $rowValues): array
+    {
+        $normalized = [];
+
+        foreach ($rowValues as $code => $value) {
+            $displayCode = $this->fieldCode->normalizeDisplayCode((string) $code);
+            $normalized[$displayCode] = $value;
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    private function supportedDateFormats(bool $withTime): array
+    {
+        if ($withTime) {
+            return [
+                'Y-m-d H:i:s',
+                'Y-m-d H:i',
+                'Y-m-d\TH:i:s',
+                'Y-m-d\TH:i',
+                'd.m.Y H:i:s',
+                'd.m.Y H:i',
+                'd/m/Y H:i:s',
+                'd/m/Y H:i',
+            ];
+        }
+
+        return [
+            'Y-m-d',
+            'd.m.Y',
+            'd/m/Y',
+        ];
+    }
+
+    private function stringifyValue(mixed $value): string
+    {
+        if ($value === null) {
+            return 'null';
+        }
+
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+
+        if (is_scalar($value)) {
+            return (string) $value;
+        }
+
+        return json_encode($value, JSON_UNESCAPED_UNICODE) ?: 'invalid';
     }
 }

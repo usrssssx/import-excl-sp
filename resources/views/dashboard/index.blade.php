@@ -48,6 +48,9 @@
                             <div class="form-group">
                                 <label>Excel-файл</label>
                                 <input type="file" name="excel_file" accept=".xlsx,.xls,.csv" required>
+                                <div class="text-small text-muted" style="margin-top: 6px;">
+                                    Разрешены файлы .xlsx, .xls, .csv до 20 МБ.
+                                </div>
                             </div>
 
                             <button class="btn btn-primary" type="submit" style="width:100%;">
