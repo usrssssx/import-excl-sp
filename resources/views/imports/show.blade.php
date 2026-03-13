@@ -137,13 +137,9 @@
         bar.style.width   = pctVal + '%';
         pct.textContent   = pctVal + '%';
         resultAct.style.display = 'flex';
-        @if($importJob->error_file_path)
-            @if(!empty($errorReportUrl))
-                errorLink.style.display = '';
-                errorLink.href = '{{ $errorReportUrl }}';
-            @else
-                errorLink.style.display = 'none';
-            @endif
+        @if(!empty($errorReportUrl))
+            errorLink.style.display = '';
+            errorLink.href = '{{ $errorReportUrl }}';
         @else
             errorLink.style.display = 'none';
         @endif

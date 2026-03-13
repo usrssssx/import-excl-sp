@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\InteractsWithBitrixContext;
 use App\Jobs\ProcessSmartProcessImport;
 use App\Models\ImportJob;
 use App\Services\Bitrix24\Bitrix24Service;
+use App\Services\Imports\ExcelImportService;
 use App\Services\Permissions\SmartProcessPermissionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -22,6 +23,7 @@ class ImportController extends Controller
     public function __construct(
         private readonly SmartProcessPermissionService $permissions,
         private readonly Bitrix24Service $bitrix24,
+        private readonly ExcelImportService $excelImport,
     ) {
     }
 
@@ -75,13 +77,9 @@ class ImportController extends Controller
 
         $this->authorizeImportAccess($request, $importJob, $user->canManagePermissions());
 
-        $errorReportUrl = null;
-        if ($importJob->error_file_path) {
-            $absolutePath = Storage::disk('local')->path($importJob->error_file_path);
-            if (is_file($absolutePath)) {
-                $errorReportUrl = route('imports.errors', $importJob);
-            }
-        }
+        $errorReportUrl = $importJob->error_rows > 0
+            ? route('imports.errors', $importJob)
+            : null;
 
         return view('imports.show', [
             'importJob' => $importJob,
@@ -101,13 +99,9 @@ class ImportController extends Controller
             ? (int) floor(($importJob->processed_rows / $importJob->total_rows) * 100)
             : ($importJob->isFinished() ? 100 : 0);
 
-        $errorReportUrl = null;
-        if ($importJob->error_file_path) {
-            $absolutePath = Storage::disk('local')->path($importJob->error_file_path);
-            if (is_file($absolutePath)) {
-                $errorReportUrl = route('imports.errors', $importJob);
-            }
-        }
+        $errorReportUrl = $importJob->error_rows > 0
+            ? route('imports.errors', $importJob)
+            : null;
 
         return response()->json([
             'status' => $importJob->status,
@@ -127,9 +121,25 @@ class ImportController extends Controller
         $user = $this->currentPortalUser($request);
         $this->authorizeImportAccess($request, $importJob, $user->canManagePermissions());
 
-        abort_unless($importJob->error_file_path !== null, 404, 'Файл с ошибками пока недоступен.');
+        abort_if($importJob->error_rows <= 0, 404, 'Ошибок в этом импорте нет.');
 
-        $absolutePath = Storage::disk('local')->path($importJob->error_file_path);
+        $absolutePath = null;
+        if ($importJob->error_file_path !== null) {
+            $candidatePath = Storage::disk('local')->path($importJob->error_file_path);
+            if (is_file($candidatePath)) {
+                $absolutePath = $candidatePath;
+            }
+        }
+
+        if ($absolutePath === null) {
+            $relativePath = $this->excelImport->generateErrorReport($importJob->fresh());
+            $importJob->forceFill([
+                'error_file_path' => $relativePath,
+            ])->save();
+
+            $absolutePath = Storage::disk('local')->path($relativePath);
+        }
+
         abort_unless(is_file($absolutePath), 404, 'Файл с ошибками не найден.');
 
         return response()->download($absolutePath, 'import-errors-'.$importJob->uuid.'.xlsx');
