@@ -13,6 +13,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\URL;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
@@ -78,7 +79,7 @@ class ImportController extends Controller
         $this->authorizeImportAccess($request, $importJob, $user->canManagePermissions());
 
         $errorReportUrl = $importJob->error_rows > 0
-            ? route('imports.errors', $importJob)
+            ? URL::signedRoute('imports.errors.public', ['importJob' => $importJob])
             : null;
 
         return view('imports.show', [
@@ -100,7 +101,7 @@ class ImportController extends Controller
             : ($importJob->isFinished() ? 100 : 0);
 
         $errorReportUrl = $importJob->error_rows > 0
-            ? route('imports.errors', $importJob)
+            ? URL::signedRoute('imports.errors.public', ['importJob' => $importJob])
             : null;
 
         return response()->json([
@@ -121,6 +122,16 @@ class ImportController extends Controller
         $user = $this->currentPortalUser($request);
         $this->authorizeImportAccess($request, $importJob, $user->canManagePermissions());
 
+        return $this->downloadErrorsFile($importJob);
+    }
+
+    public function downloadErrorsPublic(ImportJob $importJob): BinaryFileResponse
+    {
+        return $this->downloadErrorsFile($importJob);
+    }
+
+    private function downloadErrorsFile(ImportJob $importJob): BinaryFileResponse
+    {
         abort_if($importJob->error_rows <= 0, 404, 'Ошибок в этом импорте нет.');
 
         $absolutePath = null;

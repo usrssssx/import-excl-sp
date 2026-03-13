@@ -14,6 +14,10 @@ Route::match(['GET', 'POST'], '/bitrix/local/app', [BitrixContextController::cla
     ->middleware('bitrix.context')
     ->name('bitrix.entry');
 
+Route::get('/public/import-errors/{importJob}', [ImportController::class, 'downloadErrorsPublic'])
+    ->middleware('signed')
+    ->name('imports.errors.public');
+
 Route::prefix('app')->middleware('bitrix.context')->group(function (): void {
     Route::get('/', [DashboardController::class, 'index'])->name('dashboard.index');
 
