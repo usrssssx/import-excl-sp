@@ -14,8 +14,9 @@ Route::match(['GET', 'POST'], '/bitrix/local/app', [BitrixContextController::cla
     ->middleware('bitrix.context')
     ->name('bitrix.entry');
 
-Route::get('/public/import-errors/{importJob}', [ImportController::class, 'downloadErrorsPublic'])
+Route::get('/public/import-errors/{importJobUuid}', [ImportController::class, 'downloadErrorsPublic'])
     ->middleware('signed')
+    ->whereUuid('importJobUuid')
     ->name('imports.errors.public');
 
 Route::prefix('app')->middleware('bitrix.context')->group(function (): void {

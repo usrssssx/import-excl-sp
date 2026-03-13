@@ -79,7 +79,7 @@ class ImportController extends Controller
         $this->authorizeImportAccess($request, $importJob, $user->canManagePermissions());
 
         $errorReportUrl = $importJob->error_rows > 0
-            ? URL::signedRoute('imports.errors.public', ['importJob' => $importJob])
+            ? URL::signedRoute('imports.errors.public', ['importJobUuid' => $importJob->uuid])
             : null;
 
         return view('imports.show', [
@@ -101,7 +101,7 @@ class ImportController extends Controller
             : ($importJob->isFinished() ? 100 : 0);
 
         $errorReportUrl = $importJob->error_rows > 0
-            ? URL::signedRoute('imports.errors.public', ['importJob' => $importJob])
+            ? URL::signedRoute('imports.errors.public', ['importJobUuid' => $importJob->uuid])
             : null;
 
         return response()->json([
@@ -125,8 +125,10 @@ class ImportController extends Controller
         return $this->downloadErrorsFile($importJob);
     }
 
-    public function downloadErrorsPublic(ImportJob $importJob): BinaryFileResponse
+    public function downloadErrorsPublic(string $importJobUuid): BinaryFileResponse
     {
+        $importJob = ImportJob::query()->where('uuid', $importJobUuid)->firstOrFail();
+
         return $this->downloadErrorsFile($importJob);
     }
 
