@@ -104,9 +104,7 @@ class ImportController extends Controller
 
         $this->authorizeImportAccess($request, $importJob, $user->canManagePermissions());
 
-        $errorReportUrl = $importJob->error_rows > 0
-            ? URL::signedRoute('imports.errors.public', ['importJobUuid' => $importJob->uuid])
-            : null;
+        $errorReportUrl = $this->buildErrorReportUrl($importJob);
 
         return view('imports.show', [
             'importJob' => $importJob,
@@ -126,9 +124,7 @@ class ImportController extends Controller
             ? (int) floor(($importJob->processed_rows / $importJob->total_rows) * 100)
             : ($importJob->isFinished() ? 100 : 0);
 
-        $errorReportUrl = $importJob->error_rows > 0
-            ? URL::signedRoute('imports.errors.public', ['importJobUuid' => $importJob->uuid])
-            : null;
+        $errorReportUrl = $this->buildErrorReportUrl($importJob);
 
         return response()->json([
             'status' => $importJob->status,
@@ -140,6 +136,7 @@ class ImportController extends Controller
             'finished' => $importJob->isFinished(),
             'error_report_url' => $errorReportUrl,
             'dashboard_url' => route('dashboard.index'),
+            'same_sp_url' => route('dashboard.index').'#sp-'.$importJob->entity_type_id,
         ]);
     }
 
@@ -229,5 +226,41 @@ class ImportController extends Controller
         if (! $canManageAll) {
             abort_unless($importJob->bitrix_user_id === $user->bitrix_user_id, 403, 'Нет доступа к этому импорту.');
         }
+    }
+
+    private function buildErrorReportUrl(ImportJob $importJob): ?string
+    {
+        if ($importJob->error_rows <= 0 || ! $this->hasExistingErrorReport($importJob)) {
+            return null;
+        }
+
+        return URL::signedRoute('imports.errors.public', ['importJobUuid' => $importJob->uuid]);
+    }
+
+    private function hasExistingErrorReport(ImportJob $importJob): bool
+    {
+        if ($importJob->error_file_path === null) {
+            return false;
+        }
+
+        $normalizedRelativePath = ltrim(str_replace('\\', '/', $importJob->error_file_path), '/');
+        $legacyRelativePath = Str::startsWith($normalizedRelativePath, 'private/')
+            ? Str::after($normalizedRelativePath, 'private/')
+            : null;
+
+        $relativeCandidates = array_values(array_unique(array_filter([
+            $normalizedRelativePath,
+            $legacyRelativePath,
+        ])));
+
+        foreach ($relativeCandidates as $relativeCandidate) {
+            if (Storage::disk('local')->exists($relativeCandidate)) {
+                return true;
+            }
+        }
+
+        $legacyAbsolutePath = storage_path('app/'.$normalizedRelativePath);
+
+        return is_file($legacyAbsolutePath);
     }
 }

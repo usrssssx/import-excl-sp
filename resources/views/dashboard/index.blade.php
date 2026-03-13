@@ -28,7 +28,7 @@
         @else
             <div class="grid grid-2">
                 @foreach($smartProcesses as $process)
-                    <div class="sp-card">
+                    <div class="sp-card" id="sp-{{ $process['entityTypeId'] }}">
                         <div class="flex items-center justify-between gap-2">
                             <span class="sp-card-title">{{ $process['title'] }}</span>
                             <span class="badge badge-gray mono">ID {{ $process['entityTypeId'] }}</span>

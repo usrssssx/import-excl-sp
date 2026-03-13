@@ -76,6 +76,22 @@ TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
 ```
 
+Фактические пути на сервере:
+
+- Laravel лог: `/var/www/app-for-bitrix24/storage/logs/laravel.log`
+- Мониторинг: `/var/log/bitrix24-monitor.log`
+- Бэкап: `/var/log/bitrix24-backup.log`
+- Скрипт мониторинга: `/usr/local/bin/bitrix24-monitor.sh`
+- Скрипт бэкапа: `/usr/local/bin/bitrix24-backup.sh`
+
+Проверка очереди:
+
+```bash
+systemctl is-active bitrix-import-queue.service
+systemctl status --no-pager bitrix-import-queue.service
+php artisan queue:failed
+```
+
 ## 6. Быстрый post-deploy smoke
 
 1. Открыть приложение из Bitrix24 меню.
@@ -83,6 +99,18 @@ TELEGRAM_CHAT_ID=
 3. Импортировать 1-2 валидные строки.
 4. Проверить создание элементов в CRM.
 5. Загрузить файл с ошибкой и скачать `xlsx` ошибок.
+
+Команды smoke-check после деплоя:
+
+```bash
+php artisan migrate --force
+php artisan optimize:clear
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+php artisan queue:restart
+systemctl restart bitrix-import-queue.service
+```
 
 ## 7. Инцидент: импорт не идёт
 
@@ -95,3 +123,23 @@ tail -n 200 storage/logs/laravel.log
 ```
 
 Если очередь не активна, восстановить сервис и повторить импорт.
+
+## 8. Восстановление из бэкапа
+
+Бэкапы по умолчанию:
+
+- БД: `/var/backups/bitrix24/db/*.sql.gz`
+- Storage: `/var/backups/bitrix24/storage/*.tar.gz`
+
+Пример восстановления БД:
+
+```bash
+gunzip -c /var/backups/bitrix24/db/db_<name>_<timestamp>.sql.gz | mysql -u <user> -p <db_name>
+```
+
+Пример восстановления `storage`:
+
+```bash
+tar -xzf /var/backups/bitrix24/storage/storage_<timestamp>.tar.gz -C /var/www/app-for-bitrix24
+chown -R www-data:www-data /var/www/app-for-bitrix24/storage
+```

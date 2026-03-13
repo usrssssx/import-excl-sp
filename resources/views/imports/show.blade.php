@@ -45,18 +45,24 @@
 
         {{-- Result actions (shown after completion) --}}
         <div id="result-actions" class="flex flex-wrap gap-2" style="display:none;">
-            <a class="btn btn-primary" href="{{ route('dashboard.index') }}">
+            <a class="btn btn-primary" href="{{ route('dashboard.index') }}#sp-{{ $importJob->entity_type_id }}">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                Список смарт-процессов
+                Загрузить ещё файл
             </a>
             <a class="btn btn-outline" href="{{ route('dashboard.index') }}">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17,10 12,5 7,10"/><line x1="12" y1="5" x2="12" y2="19"/></svg>
-                Загрузить ещё файл
+                Выбрать другой СП
             </a>
             <a class="btn btn-danger" id="error-report-link" href="#" style="display:none;">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7,10 12,15 17,10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 Скачать строки с ошибками
             </a>
+        </div>
+
+        <div id="result-summary" class="alert alert-success" style="display:none; margin-top: 14px;">
+            Итог: <strong id="summary-success">{{ $importJob->success_rows }}</strong> успешно /
+            <strong id="summary-errors">{{ $importJob->error_rows }}</strong> ошибки /
+            <strong id="summary-total">{{ $importJob->total_rows }}</strong> всего.
         </div>
 
     </div>
@@ -79,6 +85,10 @@
     const totalTx     = document.getElementById('total-text');
     const resultAct   = document.getElementById('result-actions');
     const errorLink   = document.getElementById('error-report-link');
+    const resultSum   = document.getElementById('result-summary');
+    const sumSuccess  = document.getElementById('summary-success');
+    const sumErrors   = document.getElementById('summary-errors');
+    const sumTotal    = document.getElementById('summary-total');
 
     const render = (payload) => {
         const processed = payload.processed_rows ?? 0;
@@ -93,6 +103,9 @@
         totalTx.textContent     = total || '—';
         bar.style.width         = pctVal + '%';
         pct.textContent         = pctVal + '%';
+        sumSuccess.textContent  = payload.success_rows ?? 0;
+        sumErrors.textContent   = payload.error_rows ?? 0;
+        sumTotal.textContent    = total || 0;
 
         // status badge
         statusBadge.textContent = payload.status;
@@ -103,6 +116,7 @@
     const finish = (payload) => {
         render(payload);
         resultAct.style.display = 'flex';
+        resultSum.style.display = '';
         if (payload.error_report_url) {
             errorLink.style.display = '';
             errorLink.href = payload.error_report_url;
@@ -136,7 +150,11 @@
         const pctVal    = total > 0 ? Math.round((processed / total) * 100) : 100;
         bar.style.width   = pctVal + '%';
         pct.textContent   = pctVal + '%';
+        sumSuccess.textContent = '{{ $importJob->success_rows }}';
+        sumErrors.textContent = '{{ $importJob->error_rows }}';
+        sumTotal.textContent = '{{ $importJob->total_rows }}';
         resultAct.style.display = 'flex';
+        resultSum.style.display = '';
         @if(!empty($errorReportUrl))
             errorLink.style.display = '';
             errorLink.href = '{{ $errorReportUrl }}';
