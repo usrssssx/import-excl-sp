@@ -10,7 +10,7 @@
             <span class="badge badge-blue">{{ $appAdmins->count() }} вручную добавлено</span>
         </div>
 
-        <form action="{{ route('admin.app-admins.store') }}" method="post" class="flex items-center gap-2 flex-wrap">
+        <form action="{{ route('admin.app-admins.store') }}" method="post" class="flex gap-2 flex-wrap" style="align-items: flex-end;">
             @csrf
             <div class="form-group" style="margin:0; min-width: 260px;">
                 <label for="bitrix_user_id">Bitrix User ID</label>
@@ -121,4 +121,3 @@
         @endif
     </div>
 @endsection
-
