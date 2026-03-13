@@ -138,9 +138,44 @@ class ImportController extends Controller
 
         $absolutePath = null;
         if ($importJob->error_file_path !== null) {
-            $candidatePath = Storage::disk('local')->path($importJob->error_file_path);
-            if (is_file($candidatePath)) {
+            $normalizedRelativePath = ltrim(str_replace('\\', '/', $importJob->error_file_path), '/');
+            $legacyRelativePath = Str::startsWith($normalizedRelativePath, 'private/')
+                ? Str::after($normalizedRelativePath, 'private/')
+                : null;
+
+            $relativeCandidates = array_values(array_unique(array_filter([
+                $normalizedRelativePath,
+                $legacyRelativePath,
+            ])));
+
+            foreach ($relativeCandidates as $relativeCandidate) {
+                $candidatePath = Storage::disk('local')->path($relativeCandidate);
+                if (! is_file($candidatePath)) {
+                    continue;
+                }
+
                 $absolutePath = $candidatePath;
+
+                if ($importJob->error_file_path !== $relativeCandidate) {
+                    $importJob->forceFill([
+                        'error_file_path' => $relativeCandidate,
+                    ])->save();
+                }
+
+                break;
+            }
+
+            if ($absolutePath === null) {
+                $legacyAbsolutePath = storage_path('app/'.$normalizedRelativePath);
+                if (is_file($legacyAbsolutePath)) {
+                    $absolutePath = $legacyAbsolutePath;
+
+                    if ($legacyRelativePath !== null) {
+                        $importJob->forceFill([
+                            'error_file_path' => $legacyRelativePath,
+                        ])->save();
+                    }
+                }
             }
         }
 

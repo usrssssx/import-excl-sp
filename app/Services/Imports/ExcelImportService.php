@@ -4,6 +4,7 @@ namespace App\Services\Imports;
 
 use App\Models\ImportJob;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Shared\Date;
@@ -154,8 +155,9 @@ class ExcelImportService
             $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($column))->setAutoSize(true);
         }
 
-        $relativePath = 'private/errors/import_'.$importJob->uuid.'_errors.xlsx';
-        $absolutePath = storage_path('app/'.$relativePath);
+        // local disk root is storage/app/private, so keep relative paths without "private/" prefix.
+        $relativePath = 'errors/import_'.$importJob->uuid.'_errors.xlsx';
+        $absolutePath = Storage::disk('local')->path($relativePath);
         $directory = dirname($absolutePath);
 
         if (! is_dir($directory)) {
